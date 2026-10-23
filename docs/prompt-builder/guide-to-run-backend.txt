@@ -1,0 +1,56 @@
+A. Run agent_new.py (build API — PM2 ~76)     → typically :5010 /dev
+
+B. Run main.py (runtime API — PM2 ~103)      → typically :8011 /dev  (run workflow instances)
+
+C. Run worker.py (runtime + build consumers — PM2 ~104)
+
+FE guide — run an already-built workflow (start / stream / execute / resume):
+  docs/prompt-builder/WORKFLOW_RUN_FRONTEND_GUIDE.md
+
+FE guide — async preview/execute build jobs:
+  docs/prompt-builder/WORKFLOW_ASYNC_BUILD_FRONTEND_GUIDE.md
+
+start Valkey/Redis on port 6380
+Per the project README, start it before the worker:
+redis-server --port 6380 --daemonize yes
+redis-cli -p 6380 ping   # should return PONG
+
+then rerun:
+ cd langgraph && python worker.py
+
+If redis-server / redis-cli are not installed:
+sudo apt install redis-server redis-tools
+
+------------------------------------------------------------
+Async build jobs (Phase 1+)
+
+API (agent_new):
+  POST /aiqod-agent/agent/agentic/workflow/jobs
+  → 202 { jobId, workflowId, jobType, status }
+  Poll: POST /aiqod-agent/agent/agentic/workflow/progress  (jobStatus field)
+
+Worker env (langgraph/.env) — ADD only; do not rename existing VALKEY_*:
+  BUILD_STREAM_NAME=build_tasks
+  BUILD_GROUP_NAME=build_workers
+  MAX_BUILD_WORKERS=1
+  BUILD_AGENT_BASE_URL=http://127.0.0.1:5010/dev  # agent host+prefix (NOT :8000; include /dev)
+  BUILD_PREVIEW_TIMEOUT_SEC=3600               # 1h worker↔agent preview
+  BUILD_EXECUTE_TIMEOUT_SEC=10800              # 3h; worker↔agent execute
+  BUILD_RESUME_TIMEOUT_SEC=10800               # 3h; worker↔agent resume/sync
+  BUILD_CLAIM_TIMEOUT_MS=14400000              # 4h; must exceed longest job
+  MAX_BUILD_ATTEMPTS=3                         # stale RUNNING requeue limit
+
+Agent env (backend/.env) — same Valkey host/port as worker so enqueue hits the same broker:
+  VALKEY_HOST=localhost
+  VALKEY_PORT=6380
+  BUILD_STREAM_NAME=build_tasks
+
+Worker code is self-contained under langgraph/ (services/build_job.py, build_execute.py).
+Do not point the worker at backend/ — exec deploy does not ship sibling backend/.
+Async execute calls agent HTTP POST /plan/execute (long timeout); FE only polls /progress.
+
+Sync endpoints POST /scratch/preview, POST /plan/execute, and POST /workflow/resume are unchanged.
+Async: POST /workflow/jobs with jobType preview|execute|resume; worker calls those sync URLs.
+
+How to verify workflow creation end-to-end (curl + checklist):
+  docs/prompt-builder/WORKFLOW_CREATION_TEST_GUIDE.md

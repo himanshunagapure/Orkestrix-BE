@@ -1,0 +1,591 @@
+Issue 1: (Extremely important)
+Intent/prompt degradation. descriptions faithfully doesn't preserve every user requirement;
+###example: Screen 3 UI fidelity loss
+The original Step 3 required profile cards, photo, score badges/breakdown, matched skills, sorting/filtering, and counts.
+
+The persisted generation prompt became:
+
+> “This screen receives inputs candidates_batch_id, fetched_candidates_count, candidate_count and produces outputs user_acknowledged to render a user interface.”
+
+The ui screen generator never received the detailed UX requirement which was in the user prompt, so the generic table was a predictable result.
+
+possible solution:
+We need to Preserve user intent. Everything user asked should be there. That is important, rest whatever LLM is thinking and adding is on top of this.
+1. we need to make sure node descriptions are good enough and detailed enough including everything user prompt said. Stage 1: Skeleton planner and Stage 1.2 node description enricher are responsible for first level of it. every little important detail should be in the node description.
+2. node descriptions are passed as is to ui screen generator:
+2.a when node description is passed to prompt enhancer in ai_processor.py, everything in original prompt should be retained. The prompt enhancer job is to make the prompt better. if ui/ux is specified in prompt, then it should enhance it. if any database fetch is said in prompt, it should check if schema is there, if not we need the schema, this is important. same when database insert/update all operations are specified. that is role of prompt enhancer to collect everything that the prompt asks and make the prompt better so that ui screen generator don't make mistakes anywhere in code generation.
+2.b the enhanced prompt is then passed to IR schema generator. This is another place where information loss is there.
+in databaselogic section, it most of the time writes small prompt and this cause backend_generator to generate incomplete/bad/wrong code.
+One way is to have another llm call just after ir schema call. its job is to enrich the database logic description.  if any database fetch is said in prompt, it should check if schema is there, if not we need the schema details to be added in that prompt, this is important. same when database insert/update all operations are specified. if api related stuff is asked to do in this screen, then we need proper request/response format if it was specified in the node description prompt. because backend generator might create wrong code.
+
+
+Solution 2:
+
+#### 1a — The execute-time overwrite (highest severity)
+
+**Root cause:** `_resolve_gap_generations` conflates two separate concerns:
+- updating I/O bindings when upstream outputs change (legitimate)
+- rewriting the semantic/UX description of the screen (should never happen)
+
+**Correct fix:**
+Split `generation` into two immutable/mutable halves:
+```python
+generation.intentDescription  # immutable — set at scratch/preview, never touched again
+generation.ioSummary          # mutable — recalculated by _resolve_gap_generations
+```
+
+`_resolve_gap_generations` must update only `ioSummary` and merge it into the generator prompt by appending, not replacing. The `AIProcessor` / `generate_ir_schema` should receive `intentDescription + ioSummary` concatenated, not just the I/O sentence.
+
+----------------------------
+## RC-6 — Screen 3's detailed UI requirement was overwritten during execute
+
+### Expected
+
+Profile cards and all details listed in original Step 3.
+
+### Actually generated
+
+Persisted generation prompt:
+
+> “This screen receives inputs candidates_batch_id, fetched_candidates_count, candidate_count and produces outputs user_acknowledged to render a user interface.”
+
+Evidence:
+
+- `Process_configs.txt:469`;
+- `screen_20260909103118_146ac4d2/screen-generations.txt:409–412`.
+
+Generated IR:
+
+- “Candidate Batch Summary and Review”;
+- summary metrics;
+- generic four-column table;
+- Finish button.
+
+Evidence: Screen 3 `screen-generations.txt:5–330`.
+
+Generated Angular:
+
+- no profile cards;
+- no photo/link/headline/location display;
+- no score-breakdown bar;
+- no matched-skill chips;
+- no Open-to-Work badge;
+- no recent experience;
+- no requested sorting modes;
+- no minimum-score filter.
+
+----------------------------
+# RC-8 — Enrichment discarded candidate identity fields
+
+### Expected
+
+Each candidate should retain:
+
+- first/last/full name;
+- public identifier;
+- profile URL/photo;
+- contact fields when available;
+- search metadata plus enriched profile sections.
+
+### Actually generated
+
+The original tool replaced the search-result object with the profile response. Unipile profile responses often omitted usable first/last names, so fields available in the search result were discarded. Mapping then read only a narrow set of fields.
+
+Observed result:
+
+- counts and scores were present;
+- `first_name`, `last_name`, and email were empty;
+- Screen 3 displayed `Unknown`.
+
+### First incorrect decision
+
+**Stage:** tool body generation  
+**File/function:** `backend/services/gap_tool_generator.py`, `_generate_gap_tool_and_upsert_capability`  
+**Generated logic:** enrichment replacement rather than a merge preserving search identity.
+
+----------------------------
+## RC-9 — Exact scoring/mapping requirements degraded into approximate implementation
+
+### Expected
+
+Examples of exact requirements:
+
+- source = `"linkedin"`;
+- status = `"linkedin_sourced"`;
+- current_base = location;
+- direct `is_open_to_work` mapping;
+- exact education gap table: 20/14/7/0;
+- diploma and associate tier = 2;
+- retry once when `throttled_sections[]` reports a throttled section;
+- random delay between batches;
+- map recent work experiences into the specified shape.
+
+### Actually generated/current artifact
+
+Even after endpoint repairs, the tool body still demonstrates semantic drift:
+
+- source = `"LinkedIn Search"`;
+- status = `"Sourced"`;
+- current_base = empty;
+- Open to Work inferred from text keywords;
+- education uses proportional scoring rather than the specified gap table;
+- diploma can be treated as tier 1;
+- no deterministic `throttled_sections[]` retry behavior;
+- enrichment fields are often empty/raw rather than normalized.
+
+Evidence:
+
+- current tool JSON `function_code`, around the scoring and `candidate_doc` sections;
+- candidate dump `source`, `status`, empty experience/skills and score components (`all_Candidates.json:1–56`);
+- issue chronology notes these remaining spec gaps (`ISSUE_HISTORY.md:139–149`).
+
+### First incorrect decision
+
+**Stage:** scratch description enrichment first omitted several exact invariants; tool LLM then generated approximate alternatives.
+
+==============================================================================
+
+Issue 2:
+Backend generation
+Failed domain logic becomes generic CRUD    Metadata and compile checks, not return behavior    Wrong output accepted as success
+
+possible solution:
+Remove semantic fallbacks. Prohibit generic CRUD fallback. Never publish generic CRUD as a domain implementation. Never use stub code anywhere, whatever be the reason; even if code was not generated correctly first time, we try again, we change models, we change approach if needed, but we generate correct code and then only move forward. we have full node information and AI required to create correct code.
+this is AI agentic platform, so we have to fix with AI correctly and move forward.
+- run the generated function with fake Gemini/DB adapters; or use real values from credentials collection if needed.
+- assert actual keys and side effects against the canonical contract;
+- fail generation if conformance is not demonstrated.
+
+
+detail forensic:
+## RC — Screen 1 backend was generic CRUD instead of JD processing
+
+### Expected
+
+`process_job_search_config` should:
+
+- branch on `jd_source_mode`;
+- fetch an existing JD or call Gemini for a new JD;
+- persist the correct JD document;
+- return `jd_id`, `candidate_count`, and every flat `jd_*` output.
+
+The generated IR described this correctly:
+
+- `process_job_search_config` is a custom dynamic source;
+- it reads/writes `job_description`;
+- its `databaseLogic` explicitly requires existing/new branching, Gemini extraction, persistence, and flat outputs.
+
+Evidence: `linkedin-recruiter/ui_screens/screen_20260909102006_02d16c7d/screen-generations.txt:649–674`.
+
+### Actually generated
+
+The original generated file, before manual replacement, was a generic insert:
+
+```text
+action = "insert"
+payload = params.get("payload") or params
+result = await Database.insert_one(collection, payload)
+return {
+    "recordId": inserted_id,
+    "collectionName": collection,
+    "status": "success",
+}
+```
+
+It never read `jd_source_mode`, never called Gemini, and never returned any graph-declared output.
+
+Historical evidence:
+
+- captured original source in the earlier audit;
+- `docs/architecture-review/ISSUE_HISTORY.md:17–33`.
+
+The current file is a manual replacement and must not be mistaken for original generator output.
+
+### First incorrect decision
+
+**Stage:** backend code generation during Screen 1 gap resolution  
+**File:** `backend/services/backend_generator.py`  
+**Functions:** `_create_function_entry` fallback path and `_build_dynamic_template`
+
+Relevant logic:
+
+- when generation produces no usable source, `_create_function_entry` selects `_build_dynamic_template` (`backend/services/backend_generator.py:3949–3963`);
+- `_build_dynamic_template` derives only `operation.action`, defaulting to insert, and returns `recordId`, `collectionName`, and `status` (`backend/services/backend_generator.py:5910–5968`).
+
+The original source-generation LLM may have failed before this point, but its exact failure trace is not preserved. The first provable durable incorrect decision is the deterministic decision to publish a generic insert as the implementation of a custom domain operation.
+
+### Why it happened
+
+The backend generator optimizes for “save a compiling function” rather than “satisfy this data source's postconditions.” Its fallback understands generic CRUD action metadata but not the richer `databaseLogic`.
+
+### Why validation missed it
+
+T6 validates:
+
+- model names;
+- compiled Pydantic field names/requiredness;
+- exported input/response schema metadata.
+
+It does **not** inspect or execute the function body (`backend/services/backend_generator.py:2790–2873`). The fallback callable remained attached to the correct IR response model, so metadata agreed even while the body returned different keys.
+
+### Downstream consequences
+
+1. Angular read `res.jd_id`, `res.candidate_count`, and `res.jd_*` from a response that only contained `recordId`, `collectionName`, and `status`.
+2. `completeWorkflow` emitted `undefined` values (`app.component.ts:159–188`).
+3. Runtime/default normalization persisted empty strings, zeros, and lists.
+4. The tool received `jd_id=""`, `candidate_count=0`.
+5. The search loop did no work.
+6. Screen 3 received an empty batch ID and did not fetch.
+
+### Classification
+
+- **Primary:** J. Generator problem
+- **Also:** B. Missing deterministic constraint; C. Missing validation; L. Multiple-layer systemic problem
+- **Not primarily:** LangGraph, binding, or Stage 0
+
+### Should an LLM make this decision?
+
+- **LLM may write the domain function body:** YES, if constrained by exact contract and tested.
+- **LLM or fallback may decide that generic insert is equivalent to the requested operation:** NO.
+
+Deterministic mechanism:
+
+- mark data sources as `operation.action=custom` and prohibit generic CRUD fallback;
+- run the generated function with fake Gemini/DB adapters;
+- assert actual keys and side effects against the canonical contract;
+- fail generation if conformance is not demonstrated.
+
+---
+==============================================================================
+Since we can't block the flow as this is workflow builder involving many nodes (screens/tools), we have to make sure the code is generated correctly. We can't block draft on invalid IR, missing functions/capabilities, T8 failures, or empty graph code.
+this is AI agentic platform, so we have to fix with AI correctly and move forward.
+
+==============================================================================
+
+Issue 3:
+Tool generation
+Provider calls are not grounded or exercised    Import and syntax compilation only    Wrong endpoint, auth, or response mapping.
+Endpoint, host normalization, and response assumptions were not checked against a pinned provider operation or fixture.
+
+possible solution:
+whenever AI is creating code for any new external connection/ API endpoints, it should first know properly what request/response format that endpoint has. what is correct way of calling/using that API endpoints . Ideally new API endpoints information will be passed by user in user prompt. If not then Stage0 clarification round should ask about request/response format and correct way of calling it. verified provider specification should be done.
+if still we don't have any information till we reach backend_generator, then we need to use grounding to go and actually search on that provider website document page and check what is correct way to use it.
+
+
+forensic:
+## RC — Exact Unipile operations were lost, then the tool hallucinated alternatives
+
+### Expected
+
+The original Step 2 included exact Unipile operation shapes:
+
+- DSN `api20.unipile.com:15002`;
+- search parameter endpoints;
+- POST people search;
+- profile endpoint;
+- `linkedin_sections`;
+- pagination and retry behavior.
+
+Evidence: `Process_configs.txt:24–30`.
+
+### Actually generated
+
+The original tool used:
+
+- default `https://api.unipile.com`;
+- an incorrect people-search operation such as GET `/people/search`;
+- API paths that did not match the supplied requirement;
+- no reliable handling of the specified enrichment sections.
+
+This produced zero candidates in roughly one second after Screen 1 was repaired.
+
+ **First information-loss decision:** scratch Stage 1.2 description enrichment.
+   - The persisted tool `generationDescription` retains the business outline but omits the exact endpoint strings, methods, query parameter names, and detailed throttled-section behavior (`Process_configs.txt:400–403`).
+   - File/function: `backend/scratch_graph_planner.py`, `_stage1_2_enrich_node_descriptions`.
+   
+## Why it happened
+
+- Fidelity validation checks description coverage/length, not preservation of URLs, methods, constants, enums, or algorithms.
+- Stage 0 models only provider/purpose.
+- Tool codegen can use model knowledge or narrow model research, but it does not consume a pinned provider operation document.
+
+### Why validation missed it
+- It never performs an HTTP contract check or fixture execution 
+-  Stage 0 credential checks answer “does a credential with this name exist?”
+- gap tool compilation cannot validate runtime credential values;
+- no URL parser/normalizer was required by the capability contract;
+- no sandbox call was performed.
+==============================================================================
+
+Issue 4:
+Persistence
+The tool wrote jd_id while Screen 3 queried candidates_batch_id; graph bindings could not detect the physical join mismatch.
+
+possible solution:
+Replace free-text persistence extraction with explicit operations:
+
+```text
+write:
+  collection: all_Candidates
+  key: candidates_batch_id
+  valueFrom: sourcing.candidates_batch_id
+
+read:
+  collection: all_Candidates
+  filter:
+    candidates_batch_id: display.candidates_batch_id
+```
+
+Compile both tool and screen data access from this model. Fail if a reader has no matching writer or if key types differ.
+
+Soltuion2:
+Each node dealing with any CRUD operation on any database should be first aware of its schema, it should be in the context of LLM in backend_generator.
+
+detail forensinc:
+## RC — Tool writes and Screen 3 reads used different batch keys
+
+### Expected
+
+Rows written by the sourcing tool must be queryable using the value passed as `candidates_batch_id`.
+
+The tool declares:
+
+```text
+candidates_batch_id = jd_id
+```
+
+Therefore, every persisted candidate row must either:
+
+- contain `candidates_batch_id: jd_id`; or
+- Screen 3 must deterministically query `jd_id`.
+
+### Actually generated
+
+Original tool:
+
+- stored `jd_id`;
+- returned `candidates_batch_id = jd_id`.
+
+Original Screen 3 backend:
+
+- queried only `candidates_batch_id`/`batch_id`;
+- did not query `jd_id`.
+
+This was latent while Screen 1/tool were failing, but would still have produced an empty Screen 3 after candidate fetch succeeded.
+
+### First incorrect decision
+
+**Stage:** independent capability generation with no shared persistence contract  
+**Earliest concrete artifact:** original tool persistence body omitted the declared batch key.
+
+Relevant producers:
+
+- tool body: `_generate_gap_tool_and_upsert_capability`, `backend/services/gap_tool_generator.py`;
+- Screen 3 IR/backend: `AIProcessor` + `BackendGenerator`.
+
+The graph binding itself was correct:
+
+```text
+Screen3.candidates_batch_id ← Tool.candidates_batch_id
+```
+
+The missed binding was between a workflow value and a physical Mongo field.
+
+### Why it happened
+
+Persistence semantics lived in prose inside independently generated capabilities. There was no typed writer/reader lineage object shared by both generators.
+
+### Why validation missed it
+
+- scratch binding validation validates node-output references, not DB fields;
+- post-gap 6p validates input/output **names** only (`backend/agent_new.py:8390–8428`);
+- IR validation checks data-source structure, not cross-capability write/read equivalence;
+- Angular T8 checks function-call fields, not Mongo queries.
+
+### Downstream consequences
+
+- tool could report N fetched and write N rows;
+- Screen 3 could still query zero rows;
+- counts and visible data could contradict each other.
+
+### Classification
+
+- **Primary:** D. Bad data contract
+- **Also:** I. Binding problem; G. Capability metadata problem; C. Missing validation; L. Multiple-layer systemic problem
+
+### Should an LLM make this decision?
+
+NO. Persistence keys and lineage should be compiled from a deterministic contract:
+
+```text
+writer.collection
+writer.fields
+writer.correlationKey
+reader.collection
+reader.filterKey
+valueSource
+```
+
+LLM may propose the initial storage design, but once accepted both writer and reader must be generated from the same object.
+
+---
+==============================================================================
+
+Issue 5:
+Runtime
+Error dictionaries follow normal success edges    No output postcondition or failure envelope    Silent empty or corrupt downstream state
+
+possible solution:
+instead of silent error. show on frontend the errors, user should know what happened, where he is stucked, does he need to provide any missing credentials, does he need to configure something, is this some different problem, whatever it is.
+
+==============================================================================
+
+Issue 6:
+Fix arrays    Model array<T> where T can be scalar, enum, record, union, or nullable. if not possible in current codebase, then we translate this array to list only, but it should be correctly done.
+
+detail forensic on this issue:
+
+## RC — Arrays of strings became arrays of record objects
+
+### Expected
+
+The original JD schema explicitly uses arrays of strings:
+
+```text
+required_skills: ["..."]
+preferred_skills: ["..."]
+tools_and_technologies: ["..."]
+...
+```
+
+The persisted Screen 1 generation description still says “list of strings” (`Process_configs.txt:301–307`).
+
+### Actually generated
+
+Scratch graph outputs became:
+
+```text
+jd_required_skills: [{skill: string}]
+jd_tools_and_technologies: [{tool: string}]
+jd_certifications: [{certification: string}]
+...
+```
+
+Evidence: `Process_configs.txt:162–299`.
+
+The Screen 1 IR then generated Pydantic item models such as `SkillItem`, `ToolItem`, and `ResponsibilityItem` (`screen-generations.txt:513–616`).
+
+### First incorrect decision
+
+**Stage:** scratch Stage 2 schema design  
+**File:** `backend/scratch_graph_planner.py`  
+**Abstraction:** `NodeParam`
+
+Relevant deterministic constraint:
+
+```text
+if datatype == "list" and not itemSchema:
+    reject
+```
+
+`backend/scratch_graph_planner.py:264–287`
+
+The type system has no representation for `array<string>`. Every list must be a list of records, so the LLM could not reproduce the user's scalar-array contract even if it reasoned correctly.
+
+### Why it happened
+
+This is a bad type abstraction, not merely an LLM prompt error. The planner's anti-blob rule conflates:
+
+- scalar arrays;
+- arrays of objects;
+- large record collections.
+
+### Why validation missed it
+
+Validation enforced the incorrect abstraction. It verified that each list had an `itemSchema`, making the user-intent drift appear more valid.
+
+IR self-verification compares top-level `(name, type, required)` signatures and ignores nested item-schema semantics (`backend/services/ai_processor.py:1980–2024`). The top-level type “array/list” therefore matched.
+
+### Downstream consequences
+
+- Any correct implementation returning `["Python"]` violates the generated Pydantic response contract.
+- After Screen 1 was manually repaired to follow the textual requirement, Pydantic returned a 500 demanding dictionaries/`SkillItem`.
+- A second manual repair had to wrap strings as `{skill: "Python"}`.
+- The tool then needed custom unwrapping code.
+
+Important chronology:
+
+The observed Pydantic 500 occurred **after the original generic backend was manually replaced**. It was not the first original runtime failure, but it exposed a latent contract defect created by scratch planning.
+
+### Classification
+
+- **Primary:** D. Bad data contract
+- **Also:** E. Bad abstraction; H. Graph planner problem; B. Missing deterministic constraint
+
+### Should an LLM make this decision?
+
+NO. Translating a declared JSON type into the canonical workflow type is deterministic.
+
+Permanent mechanism:
+
+```text
+array:
+  items:
+    type: string | number | boolean | object | enum | union
+```
+
+The original step's scalar arrays should compile directly to JSON Schema/Pydantic/TypeScript scalar arrays.
+
+---
+==============================================================================
+Issue 7:
+
+## RC-13 — Required graph outputs were weakened into optional response fields
+
+### Expected
+
+Screen 1's outputs are mandatory inputs to the sourcing tool. The persisted graph marks `jd_id`, `candidate_count`, and every `jd_*` field required (`Process_configs.txt:71–294`).
+
+### Actually generated
+
+`ProcessJobSearchResponse` marked all those fields optional (`screen_20260909102006_02d16c7d/screen-generations.txt:460–579`). This was not LLM variance: the IR repair prompt deterministically instructs that every non-error response field be changed to `required: false` so partial error responses remain model-compatible (`backend/services/ai_processor.py:5091–5097`).
+
+### First incorrect decision
+
+**Stage:** Screen 1 IR repair  
+**File/function:** `backend/services/ai_processor.py`, repair path in `generate_ir_schema`
+
+The repair policy conflates two incompatible states in one schema:
+
+- successful response, where graph outputs are mandatory;
+- failed response, where only an error may exist.
+
+### Why validation missed it
+
+- the repaired IR is valid by its own weakened schema;
+- backend T6 checks model/schema alignment against that same IR;
+- post-gap 6p checks output **names**, not output types or requiredness (`backend/agent_new.py:8391–8400`);
+- runtime does not assert required declared outputs before scheduling the next node.
+
+### Downstream consequences
+
+The generic Screen 1 backend could omit every graph-required value while remaining response-model compatible. This did not first create the bad backend body (RC-1), but it removed the deterministic containment boundary that should have stopped it.
+
+### Classification
+
+- **Primary:** D. Bad data contract
+- **Also:** B. Missing deterministic constraint; C. Missing validation; K. Runtime/execution problem
+
+==============================================================================
+Issue 8:
+152- Prior-phase globals are deduplicated by bare output name, losing provenance when multiple nodes emit fields such as `status`, `result`, or `count` (`backend/scratch_graph_planner.py:6910–6935`).
+
+
+==============================================================================
+
+Issue 9:
+221- LLM output metadata can override the workflow output contract. (in gaptool generator)
+
+==============================================================================
+==============================================================================
+

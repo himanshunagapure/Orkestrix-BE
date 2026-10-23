@@ -1,0 +1,169 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+.env.local
+
+# Environment Variables
+.env
+.env.production
+.env.development
+*.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Google Cloud service-account credentials
+backend/product-api-key-474411-4194c105e887.json
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+
+# FastAPI / Uvicorn
+.uvicorn/
+
+# Static files (if generated)
+static/
+media/
+
+# Documentation builds
+docs/_build/
+site/
+
+# Backup files
+*.backup
+*~.nib
+
+# Node.js (if frontend is included)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Package manager
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# MongoDB
+*.mongodb
+
+# Redis
+dump.rdb
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Sensitive data
+secrets.json
+credentials.json
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+
+# AI/ML models (if storing locally)
+*.h5
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.onnx
+models/
+
+# Large files
+*.csv
+!design/design_reference/data/**/*.csv
+*.xlsx
+*.json.gz
+*.tar.gz
+*.zip
+
+# Local configuration
+config.local.yml
+config.local.json
+product.json
+config.json
+langgraph
+tools

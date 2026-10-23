@@ -1,0 +1,156 @@
+<div class="p-4 @container(min-width:600px):p-8 @container(min-width:900px):p-12 max-w-[1200px] mx-auto">
+  
+    <!-- Header -->
+    <header class="mb-8 text-center" data-aos="fade-down">
+      <h1 class="text-2xl @container(min-width:600px):text-3xl font-bold mb-2" style="color: var(--theme-text)">
+        Project AI Recommendations
+      </h1>
+      <p class="text-sm @container(min-width:600px):text-base opacity-80 max-w-2xl mx-auto">
+        Leverage AI to analyze historical project data and generate actionable recommendations for review and submission.
+      </p>
+    </header>
+  
+    <!-- Loading State -->
+    @if (loading()) {
+      <div class="flex flex-col items-center justify-center py-16" data-aos="fade-in">
+        <div class="relative w-16 h-16 mb-4">
+          <div class="absolute inset-0 rounded-full border-4 border-gray-200"></div>
+          <div class="absolute inset-0 rounded-full border-4 border-t-transparent animate-spin-slow" style="border-color: var(--theme-primary) transparent transparent transparent"></div>
+        </div>
+        <p class="text-lg font-medium" style="color: var(--theme-secondary)">{{ loadingMessage() }}</p>
+      </div>
+    }
+  
+    <!-- Error Alert -->
+    @if (error()) {
+      <div class="mb-8 p-4 rounded-lg flex items-start gap-3" style="background-color: rgba(239, 68, 68, 0.1); border: 1px solid var(--theme-error); color: var(--theme-error)" data-aos="fade-in">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <div>
+          <h3 class="font-semibold">Error</h3>
+          <p class="text-sm mt-1">{{ error() }}</p>
+        </div>
+      </div>
+    }
+  
+    <!-- Recommendations List -->
+    @if (!loading() && recommendations()) {
+      <div class="recommendations-list" data-aos="fade-up">
+
+        <!-- Project Plan Card -->
+        <div class="theme-card recommendation-card">
+          <div class="recommendation-card__header">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" style="color: var(--theme-primary)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <h3 class="font-semibold text-lg">Recommended Project Plan</h3>
+          </div>
+          <div class="recommendation-card__body">
+            <p class="text-sm opacity-90">{{ recommendations()?.recommended_project_plan || 'N/A' }}</p>
+          </div>
+          <div class="recommendation-card__meta">
+            <span class="theme-badge-info px-2.5 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Confidence: {{ (recommendations()?.plan_confidence_score || 0) * 100 | number:'1.0-0' }}%
+            </span>
+          </div>
+        </div>
+
+        <!-- Resource Structure & Team Size Card -->
+        <div class="theme-card recommendation-card">
+          <div class="recommendation-card__header">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" style="color: var(--theme-primary)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            <h3 class="font-semibold text-lg">Resource Structure &amp; Team Size</h3>
+          </div>
+          <div class="recommendation-card__body">
+            <p class="text-sm opacity-90">{{ recommendations()?.recommended_resource_structure || 'N/A' }}</p>
+            <p class="mt-3 text-sm">
+              <span class="opacity-70">Suggested team size:</span>
+              <span class="text-xl font-bold ml-2" style="color: var(--theme-primary)">
+                {{ recommendations()?.suggested_team_size || 0 }}
+                <span class="text-sm font-normal opacity-70">people</span>
+              </span>
+            </p>
+          </div>
+          <div class="recommendation-card__meta">
+            <span class="theme-badge-info px-2.5 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Confidence: {{ (recommendations()?.resource_confidence_score || 0) * 100 | number:'1.0-0' }}%
+            </span>
+          </div>
+        </div>
+
+        <!-- Risk Template Card -->
+        <div class="theme-card recommendation-card">
+          <div class="recommendation-card__header">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" style="color: var(--theme-primary)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <h3 class="font-semibold text-lg">Risk Template</h3>
+          </div>
+          <div class="recommendation-card__body">
+            <p class="text-sm opacity-90">{{ recommendations()?.recommended_risk_template || 'N/A' }}</p>
+          </div>
+          <div class="recommendation-card__meta">
+            <span class="theme-badge-info px-2.5 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Confidence: {{ (recommendations()?.risk_confidence_score || 0) * 100 | number:'1.0-0' }}%
+            </span>
+          </div>
+        </div>
+
+        <!-- Timeline Card -->
+        <div class="theme-card recommendation-card">
+          <div class="recommendation-card__header">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" style="color: var(--theme-primary)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <h3 class="font-semibold text-lg">Suggested Timeline</h3>
+          </div>
+          <div class="recommendation-card__body">
+            <p class="text-lg font-medium">{{ recommendations()?.suggested_timeline || 'N/A' }}</p>
+          </div>
+        </div>
+
+        <!-- Budget Card -->
+        <div class="theme-card recommendation-card">
+          <div class="recommendation-card__header">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" style="color: var(--theme-primary)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h3 class="font-semibold text-lg">Estimated Budget</h3>
+          </div>
+          <div class="recommendation-card__body">
+            <p class="text-2xl font-bold" style="color: var(--theme-primary)">
+              {{ (recommendations()?.estimated_budget || 0) | currency:'USD':'symbol':'1.0-0' }}
+            </p>
+          </div>
+        </div>
+
+      </div>
+  
+      <!-- Actions -->
+      <div class="flex justify-center mt-8" data-aos="fade-up" data-aos-delay="100">
+        <button 
+          (click)="onContinue()" 
+          [disabled]="loading()"
+          class="theme-btn-primary px-8 py-3 text-lg font-medium shadow-md flex items-center gap-2 w-full @container(min-width:600px):w-auto justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+          Continue
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+    }
+  
+  </div>
+  

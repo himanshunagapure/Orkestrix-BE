@@ -1,0 +1,151 @@
+Phase 1: Impact Analysis — "What Will Break?"
+
+Before any code changes, the system:
+
+1. Maps the blast radius bidirectionally — Follows every arrow in your workflow graph, including:
+  - Forward edges (normal flow: A → B → C)
+  - Backward edges (retry loops, fallback paths, compensation rollbacks, human-in-the-loop returns)
+
+Node A → Node B → Node C
+ ↑         │
+ │    (retry)          ← Backward edge detected
+ └─────────┘
+If Node B changes, Node A is now in the blast radius because a retry sends execution back to it.
+
+2. Detects cycles — Identifies all nodes participating in loops (retry, fallback, saga compensation, user returns)
+
+3. Classifies each change (same as before):
+  -  Safe — Only inputs changed, outputs stay compatible
+  -  Breaking — Outputs removed/renamed/types changed
+  -  Structural — Nodes/edges added or removed
+  
+4. Shows you a bidirectional report:
+▎ "Changing Node B's output schema will affect:
+▎ - Downstream: Node C, Node D (normal flow)
+▎ - Upstream (via retry loop): Node A (retries back to A with new data shape)
+▎ - Fallback path: Node F (error handler receives new error format)"
+
+You decide: Approve or reject. Nothing happens until you say yes.
+
+--------------------------------------------------------------
+Phase 2: Surgical Editing — "Fix Only What's Broken"
+
+Same as before — generates minimal diffs, preserves all untouched code.
+
+---------------------------------------------------------------
+Phase 3: Validation & Repair — "Did It Work?"
+
+Same 6 checks, plus one new cycle-aware check:
+
+┌───────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│           Check           │                                                What It Catches                                                 │
+├───────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Cycle Contract Compliance │ "Node A (in retry loop) expects customer_id from Node B, but Node B renamed it to client_id — retry will fail" │
+└───────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+---
+The Complete Flow (Updated)
+
+YOU REQUEST A CHANGE
+        │
+        ▼
+┌───────────────────────────┐
+│  PHASE 1: IMPACT ANALYSIS │ ──► "This breaks Node C (downstream)
+│  + CYCLE DETECTION        │      AND Node A (via retry loop)"
+└─────────────┬─────────────┘
+              │ (if breaking changes)
+              ▼
+┌───────────────────────────┐
+│       YOUR APPROVAL       │ ──► "Yes, proceed" / "No, cancel"
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│   PHASE 2: SURGICAL EDIT  │ ──► Minimal diffs, preserves everything else
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│  PHASE 3: VALIDATE &      │ ──► 6 checks + cycle compliance + auto-fix
+│  REPAIR (3 iterations)    │
+└─────────────┬─────────────┘
+              │
+       ┌──────┴──────┐
+       ▼             ▼
+    CLEAN?        ISSUES?
+       │             │
+       ▼             ▼
+    DONE!        REPEAT 2-3
+                 (max 3×)
+
+----------------------------------------------------------------------------------------
+
+
+┌───────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────┬──────────┐
+│           File            │                                               Purpose                                               │  Phase   │
+├───────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────┤
+│                           │ Core engine for Phase 1 — builds bidirectional graph indices, detects cycles via Tarjan's           │          │
+│ impact_analysis.py        │ algorithm, calculates blast radius (forward + backward edges), classifies change severity           │ Phase 1  │
+│                           │ (NONE/SAFE/BREAKING/STRUCTURAL), generates ImpactReport for user approval                           │          │
+├───────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────┤
+│                           │ Core engine for Phase 2 — diff-based editing framework (CodeEdit, EditPlan, DiffApplicator),        │          │
+│ surgical_editing.py       │ node-type generators (ui_screen→Angular, tool→LLM Python diff, agent:workflow→reference update),    │ Phase 2  │
+│                           │ preserves all untouched code                                                                        │          │
+├───────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────┤
+│                           │ Core engine for Phase 3 — 6-category validation (Graph Integrity, Contract Compliance, Type Safety, │          │
+│ validation_repair.py      │  Syntax, Backend Compat, Cycle Contracts), auto-repair engine (fixes bindings, syntax via LLM),     │ Phase 3  │
+│                           │ iterative loop (max 3 iterations)                                                                   │          │
+├───────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────┤
+│                           │ Orchestrator — runs all 3 phases sequentially with gates (Phase 1→approval→Phase 2→Phase 3→retry),  │          │
+│ integrated_pipeline.py    │ PipelineState management, callbacks for UI integration (on_impact_report, on_edit_plan,             │ All      │
+│                           │ on_validation_report, on_progress), fallback to legacy                                              │          │
+├───────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼────────── │
+└───────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────┘
+
+
+Architecture Summary
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    THREE-PHASE PIPELINE                         │
+├─────────────────────────────────────────────────────────────────┤
+│  Phase 1: impact_analysis.py      → "What Will Break?"         │
+│    - Bidirectional blast radius (Tarjan's cycles)              │
+│    - Severity classification                                    │
+│    - User approval gate                                         │
+├─────────────────────────────────────────────────────────────────┤
+│  Phase 2: surgical_editing.py      → "Fix Only What's Broken"  │
+│    - Minimal diffs (search/replace)                             │
+│    - Node-type generators                                       │
+│    - Preserves 100% untouched code                              │
+├─────────────────────────────────────────────────────────────────┤
+│  Phase 3: validation_repair.py    → "Did It Work?"             │
+│    - 6 validation categories + cycle contracts                 │
+│    - Auto-repair (bindings, syntax)                            │
+│    - Iterative loop (max 3×)                                    │
+├─────────────────────────────────────────────────────────────────┤
+│  integrated_pipeline.py         → Orchestrates all 3 phases    │
+│    - Gates & callbacks for UI                                   │
+│    - Fallback to legacy pipeline                                │
+└─────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+                   agent_new.py (integration point)
+
+
+Key Capabilities 
+
+┌──────────────┬───────────────────┬─────────────────────────────────┐
+│  Capability  │      Before       │              After              │
+├──────────────┼───────────────────┼─────────────────────────────────┤
+│ Blast radius │ Downstream only   │ Bidirectional (cycles included) │
+├──────────────┼───────────────────┼─────────────────────────────────┤
+│ Code changes │ Full regeneration │ Surgical diffs                  │
+├──────────────┼───────────────────┼─────────────────────────────────┤
+│ User control │ None              │ Approval gates at each phase    │
+├──────────────┼───────────────────┼─────────────────────────────────┤
+│ Validation   │ Basic graph check │ 6 categories + auto-repair      │
+├──────────────┼───────────────────┼─────────────────────────────────┤
+│ Reliability  │ Single-shot       │ Iterative self-healing (3×)     │
+├──────────────┼───────────────────┼─────────────────────────────────┤
+│ Rollback     │ Manual            │ Automatic fallback to legacy    │
+

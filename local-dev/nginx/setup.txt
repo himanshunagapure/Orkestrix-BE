@@ -1,0 +1,25 @@
+Prerequisites
+Confirm these paths exist in backend/config.json (already set):
+
+"LIBERTY_FS_ROOT": "/home/user/publicfolder/liberty_fs",
+"LIBERTY_FS_BASE_URL": "http://localhost:843"
+
+Option A — Automated (recommended)
+
+Step 1: Run the setup script
+cd /home/user/Projects/screen-builder
+./local-dev/nginx/setup-liberty-fs.sh
+This will:
+
+Install nginx (if missing)
+Copy local-dev/nginx/liberty-fs.conf into nginx
+Enable the site on port 843
+Start/restart nginx
+
+Step 2: Verify
+curl -I http://localhost:843/loan-application-screen/
+You should see HTTP/1.1 200 OK.
+
+Step 3: Open any link in browser
+
+http://localhost:843/loan-application-screen/
